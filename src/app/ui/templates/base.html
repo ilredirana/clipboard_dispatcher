@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0d0f">
+    <title>{% block title %}Clipboard Dispatcher{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ request.scope.get('root_path', '') }}/static/favicon.svg?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ request.scope.get('root_path', '') }}/static/css/style.css?v={{ asset_version }}">
+</head>
+<body class="app-shell">
+    <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Clipboard Dispatcher 首页">
+            <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
+            <span class="brand-copy"><strong>Clipboard</strong><span>Dispatcher</span></span>
+        </a>
+
+        <nav class="primary-nav" aria-label="主导航">
+            <span class="nav-label">功能菜单</span>
+            <a href="/" class="nav-item {% if request.url.path == '/' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
+                <span>运行总览</span>
+            </a>
+            <a href="/devices" class="nav-item {% if request.url.path == '/devices' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h4A2.5 2.5 0 0 1 13 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-4A2.5 2.5 0 0 1 4 18.5v-13ZM7 6h3m-2 12h1"/><path d="M16 7h2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2"/></svg>
+                <span>同步设备</span>
+            </a>
+            <a href="/settings" class="nav-item {% if request.url.path == '/settings' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06a1.7 1.7 0 0 0 1.88.34H9A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88V9A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+                <span>系统配置</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-status">
+            <span class="live-indicator" aria-hidden="true"></span>
+            <div><strong>服务状态</strong><span>服务正在运行</span></div>
+        </div>
+        <div class="sidebar-footer">
+            <span>版本 {{ app_version }}</span><span class="version-chip">自托管</span>
+        </div>
+    </aside>
+
+    <main class="content">{% block content %}{% endblock %}</main>
+    <script src="{{ request.scope.get('root_path', '') }}/static/js/app.js?v={{ asset_version }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

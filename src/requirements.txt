@@ -1,0 +1,3 @@
+-r requirements-server.txt
+pyperclip==1.11.0
+pystray==0.19.5

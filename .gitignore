@@ -1,0 +1,17 @@
+/.venv/
+/data/
+/.pytest_cache/
+/.ruff_cache/
+/.tmp-route-check/
+__pycache__/
+*.py[cod]
+
+/src/config.json
+/src/app.log
+/src/data/config.json
+/build/
+/dist/
+/release/
+/*.spec
+/src/data/app.log
+/src/.env*

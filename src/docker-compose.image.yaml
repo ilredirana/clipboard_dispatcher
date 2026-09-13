@@ -1,0 +1,16 @@
+services:
+  clipboard_dispatcher:
+    image: ${CLIPBOARD_DISPATCHER_IMAGE:-clipboard-dispatcher:1.0.0}
+    restart: unless-stopped
+    ports:
+      - "${CLIPBOARD_DISPATCHER_PORT:-9888}:8000"
+    volumes:
+      - ../data:/app/data
+    environment:
+      HTTP_PROXY:
+      HTTPS_PROXY:
+      http_proxy:
+      https_proxy:
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      no_proxy: ${no_proxy:-localhost,127.0.0.1}
+      TZ: Asia/Shanghai

@@ -1,0 +1,59 @@
+<section class="panel data-panel" id="device-management-section">
+    <div class="panel-heading">
+        <div><span class="eyebrow">设备列表</span><h2>同步设备</h2><p>每台设备都有独立 Token。禁用或删除后，原配置立即失效。</p></div>
+        <span class="panel-meta">独立 Token</span>
+    </div>
+    <div class="create-device-bar">
+        <div class="field-block"><label for="device-name">设备名称</label><input id="device-name" type="text" maxlength="64" placeholder="例如：办公室电脑"></div>
+        <div class="field-block"><label for="device-platform">设备平台</label><select id="device-platform"><option value="windows">Windows</option><option value="ios">iOS</option><option value="android">Android</option></select></div>
+        <button id="create-device-button" class="btn btn-primary" type="button" onclick="createDevice()">创建设备</button>
+    </div>
+    <div class="table-wrap">
+        <table><thead><tr><th>名称</th><th>平台</th><th>创建时间</th><th>最后在线</th><th>状态</th><th>操作</th></tr></thead><tbody id="device-list-body"><tr><td colspan="6" class="empty-cell">正在加载设备</td></tr></tbody></table>
+    </div>
+    <template id="device-provisioning-template">
+        <section class="device-provisioning">
+            <div class="panel-heading provisioning-heading">
+                <div><span class="eyebrow">当前配置</span><h3 data-provisioning-role="title">设备接入配置</h3><p data-provisioning-role="summary"></p></div>
+                <span data-provisioning-role="platform-mark" class="platform-mark"></span>
+            </div>
+            <div class="alert alert-info">这里直接显示设备当前使用的明文 Token。刷新页面后可随时通过“查看当前配置”重新打开。</div>
+            <div data-provisioning-role="windows" class="platform-provisioning" hidden>
+                <div class="alert alert-info">在目标 Windows 客户端的“同步行为”中导入配置，或手工填写以下连接信息。</div>
+                <div class="windows-provisioning-grid">
+                    <div class="field-block"><span class="field-label">服务地址</span><input data-provisioning-role="windows-server-url" readonly class="mono-input" aria-label="Windows 服务地址"></div>
+                    <div class="field-block"><span class="field-label">设备名称</span><input data-provisioning-role="windows-device-id" readonly class="mono-input" aria-label="Windows 设备名称"></div>
+                    <div class="field-block field-span-2"><span class="field-label">同步 Token</span><textarea data-provisioning-role="windows-token" readonly rows="2" class="mono-input" aria-label="Windows 同步 Token"></textarea></div>
+                </div>
+                <div class="utility-actions"><a data-provisioning-role="windows-config-download" class="btn btn-primary" download>下载 Windows 配置</a><button class="btn btn-outline" type="button" onclick="copyProvisioningValue(this, 'windows-server-url', '服务地址')">复制地址</button><button class="btn btn-outline" type="button" onclick="copyProvisioningValue(this, 'windows-token', '同步 Token')">复制 Token</button></div>
+            </div>
+            <div data-provisioning-role="ios" class="platform-provisioning" hidden>
+                <div class="alert alert-info">先安装四个快捷指令，再使用“配置导入”扫描第五个二维码。配置内容会原样写入 iCloud Drive 的配置文件；完成导入后再使用上传、下载和截图快捷指令。</div>
+                <div class="shortcut-install-grid">
+                    <article class="import-method-card"><span class="qr-label">第一步</span><h4>安装配置导入快捷指令</h4><p>扫描设备配置二维码后，它会把配置保存到 iCloud Drive。</p><div data-provisioning-role="ios-configuration-shortcut-qr" class="provisioning-qr provisioning-qr-small" aria-label="配置导入快捷指令二维码"></div><a data-provisioning-role="ios-configuration-shortcut-link" class="btn btn-secondary" target="_blank" rel="noopener">打开快捷指令</a></article>
+                    <article class="import-method-card"><span class="qr-label">日常上传</span><h4>上传剪贴板快捷指令</h4><p>把 iPhone 当前剪贴板发送到服务端。</p><div data-provisioning-role="ios-push-shortcut-qr" class="provisioning-qr provisioning-qr-small" aria-label="上传快捷指令二维码"></div><a data-provisioning-role="ios-push-shortcut-link" class="btn btn-primary" target="_blank" rel="noopener">打开快捷指令</a></article>
+                    <article class="import-method-card"><span class="qr-label">截图上传</span><h4>截图自动上传快捷指令</h4><p>用于在 iPhone 截图自动化中上传当前截图。</p><div data-provisioning-role="ios-screenshot-upload-shortcut-qr" class="provisioning-qr provisioning-qr-small" aria-label="截图自动上传快捷指令二维码"></div><a data-provisioning-role="ios-screenshot-upload-shortcut-link" class="btn btn-primary" target="_blank" rel="noopener">打开快捷指令</a></article>
+                    <article class="import-method-card"><span class="qr-label">日常下载</span><h4>下载剪贴板快捷指令</h4><p>从服务端读取最新内容并写入剪贴板。</p><div data-provisioning-role="ios-pull-shortcut-qr" class="provisioning-qr provisioning-qr-small" aria-label="拉取快捷指令二维码"></div><a data-provisioning-role="ios-pull-shortcut-link" class="btn btn-secondary" target="_blank" rel="noopener">打开快捷指令</a></article>
+                </div>
+                <div class="provisioning-primary-method">
+                    <div><span class="qr-label">设备配置</span><h4>扫描此二维码完成设置</h4><p>在“配置导入快捷指令”中扫描。二维码内容会保存为 `ClipboardDispatcherConfig.json`。</p></div>
+                    <div data-provisioning-role="ios-config-qr" class="provisioning-qr" aria-label="iOS 专属配置二维码"></div>
+                </div>
+            </div>
+            <div data-provisioning-role="tasker" class="platform-provisioning" hidden>
+                <div class="alert alert-info">Tasker 项目和任务已写入当前服务地址、设备 ID 与 Token，可随时重复查看和下载。重新签发后，同一下载链接会使用新 Token。</div>
+                <article class="provisioning-primary-method">
+                    <div><span class="qr-label">推荐方式</span><h4>完整 Tasker 项目</h4><p>包含剪贴板变化自动上传和手动下载任务，导入后可直接使用。</p><a data-provisioning-role="tasker-project-download" class="btn btn-primary">下载已配置项目</a></div>
+                    <img data-provisioning-role="tasker-project-qr" class="provisioning-qr" alt="已配置 Tasker 项目二维码" width="180" height="180">
+                </article>
+                <details class="tasker-details">
+                    <summary>只导入单个任务</summary>
+                    <div class="qr-grid">
+                        <article class="qr-card"><span class="qr-label">上传</span><h4>上传任务</h4><img data-provisioning-role="tasker-upload-qr" alt="已配置上传任务二维码" width="160" height="160"><a data-provisioning-role="tasker-upload-download" class="btn btn-secondary">下载上传任务</a></article>
+                        <article class="qr-card"><span class="qr-label">下载</span><h4>下载任务</h4><img data-provisioning-role="tasker-download-qr" alt="已配置下载任务二维码" width="160" height="160"><a data-provisioning-role="tasker-download-download" class="btn btn-secondary">下载下载任务</a></article>
+                    </div>
+                </details>
+            </div>
+        </section>
+    </template>
+</section>

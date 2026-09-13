@@ -1,0 +1,164 @@
+<?xml version='1.0' encoding='utf-8'?>
+<TaskerData sr="" dvi="1" tv="6.6.20">
+	<Task sr="task35">
+		<cdate>1787318000000</cdate>
+		<edate>1787318000000</edate>
+		<id>35</id>
+		<nme>Download Clipboard</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>474</code>
+			<Str sr="arg0" ve="3">import android.os.Environment;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import org.json.JSONObject;
+
+String serverUrl = tasker.getVariable("clip_server_url");
+String authToken = tasker.getVariable("clip_auth_token");
+if (serverUrl != null) serverUrl = serverUrl.trim().replaceAll("/+$", "");
+if (authToken != null) authToken = authToken.trim();
+
+tasker.setVariable("download_kind", "");
+tasker.setVariable("clipboard_content", "");
+tasker.setVariable("image_path", "");
+tasker.setVariable("result_message", "");
+
+Response response = null;
+try {
+    if (serverUrl == null || serverUrl.length() == 0 || serverUrl.startsWith("__CLIP_")) {
+        tasker.setVariable("result_message", "配置错误：未配置 Server URL");
+    } else if (!(serverUrl.startsWith("http://") || serverUrl.startsWith("https://"))) {
+        tasker.setVariable("result_message", "配置错误：Server URL 必须以 http:// 或 https:// 开头");
+    } else if (authToken == null || authToken.length() == 0 || authToken.startsWith("__CLIP_")) {
+        tasker.setVariable("result_message", "配置错误：未配置 Device Token");
+    } else {
+        OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build();
+        Request request = new Request.Builder()
+            .url(serverUrl + "/api/clipboard/download")
+            .header("Authorization", "Bearer " + authToken)
+            .header("Accept", "text/plain, image/png, image/jpeg, image/webp")
+            .header("Cache-Control", "no-cache")
+            .get()
+            .build();
+        response = client.newCall(request).execute();
+        int status = response.code();
+        ResponseBody responseBody = response.body();
+        byte[] bytes = responseBody == null ? new byte[0] : responseBody.bytes();
+
+        if (status == 204) {
+            tasker.setVariable("result_message", "云端剪贴板为空或内容已过期");
+        } else if (status &lt; 200 || status &gt;= 300) {
+            String errorText = new String(bytes, StandardCharsets.UTF_8);
+            String detail = errorText;
+            try {
+                JSONObject errorJson = new JSONObject(errorText);
+                String parsed = errorJson.optString("detail", "");
+                if (parsed.length() &gt; 0) detail = parsed;
+            } catch (Exception ignored) {
+            }
+            tasker.setVariable("result_message", "剪贴板下载失败（HTTP " + status + ")" + (detail.length() &gt; 0 ? "：" + detail : ""));
+        } else {
+            String contentType = response.header("Content-Type");
+            if (contentType == null) contentType = "";
+            String mediaType = contentType.split(";", 2)[0].trim().toLowerCase(Locale.US);
+
+            if ("text/plain".equals(mediaType)) {
+                tasker.setVariable("clipboard_content", new String(bytes, StandardCharsets.UTF_8));
+                tasker.setVariable("download_kind", "text");
+                tasker.setVariable("result_message", "文本下载成功");
+            } else if ("image/png".equals(mediaType) || "image/jpeg".equals(mediaType) || "image/webp".equals(mediaType)) {
+                if (bytes.length == 0) throw new Exception("服务端返回空图片");
+                String ext = "image/jpeg".equals(mediaType) ? "jpg" : ("image/webp".equals(mediaType) ? "webp" : "png");
+                String relative = "Tasker/.clipboard_dispatcher/cache/latest." + ext;
+                File target = new File(Environment.getExternalStorageDirectory(), relative);
+                File parent = target.getParentFile();
+                if (parent == null || (!parent.exists() &amp;&amp; !parent.mkdirs() &amp;&amp; !parent.exists())) throw new Exception("无法创建图片缓存目录");
+                try { new File(parent, ".nomedia").createNewFile(); } catch (Exception ignored) {}
+                FileOutputStream output = null;
+                try {
+                    output = new FileOutputStream(target, false);
+                    output.write(bytes);
+                    output.flush();
+                } finally {
+                    if (output != null) output.close();
+                }
+                if (!target.isFile() || target.length() != bytes.length) throw new Exception("图片缓存写入不完整");
+                tasker.setVariable("image_path", relative);
+                tasker.setVariable("download_kind", "image");
+                tasker.setVariable("result_message", "图片下载成功");
+            } else {
+                tasker.setVariable("result_message", "服务端返回了不支持的 Content-Type：" + contentType);
+            }
+        }
+    }
+} catch (Exception error) {
+    String detail = error.getMessage();
+    if (detail == null || detail.length() == 0) detail = error.getClass().getSimpleName();
+    tasker.setVariable("result_message", "下载失败：" + detail);
+} finally {
+    if (response != null) response.close();
+}</Str>
+			<Str sr="arg1" ve="3"/>
+			<Int sr="arg2" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>105</code>
+			<se>false</se>
+			<Str sr="arg0" ve="3">%clipboard_content</Str>
+			<Int sr="arg1" val="0"/>
+			<Str sr="arg2" ve="3"/>
+			<Int sr="arg3" val="0"/>
+			<ConditionList sr="if">
+				<Condition sr="c0" ve="3">
+					<lhs>%download_kind</lhs>
+					<op>0</op>
+					<rhs>text</rhs>
+				</Condition>
+			</ConditionList>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>105</code>
+			<se>false</se>
+			<Str sr="arg0" ve="3"/>
+			<Int sr="arg1" val="0"/>
+			<Str sr="arg2" ve="3">%image_path</Str>
+			<Int sr="arg3" val="0"/>
+			<ConditionList sr="if">
+				<Condition sr="c0" ve="3">
+					<lhs>%download_kind</lhs>
+					<op>0</op>
+					<rhs>image</rhs>
+				</Condition>
+			</ConditionList>
+		</Action>
+		<Action sr="act3" ve="7">
+			<code>548</code>
+			<Str sr="arg0" ve="3">%result_message</Str>
+			<Int sr="arg1" val="0"/>
+			<Str sr="arg10" ve="3"/>
+			<Int sr="arg11" val="1"/>
+			<Int sr="arg12" val="0"/>
+			<Str sr="arg13" ve="3"/>
+			<Int sr="arg14" val="0"/>
+			<Str sr="arg15" ve="3"/>
+			<Int sr="arg2" val="0"/>
+			<Str sr="arg3" ve="3"/>
+			<Str sr="arg4" ve="3"/>
+			<Str sr="arg5" ve="3"/>
+			<Str sr="arg6" ve="3"/>
+			<Str sr="arg7" ve="3"/>
+			<Str sr="arg8" ve="3"/>
+			<Int sr="arg9" val="1"/>
+		</Action>
+	</Task>
+</TaskerData>

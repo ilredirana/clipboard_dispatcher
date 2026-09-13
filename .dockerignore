@@ -1,0 +1,15 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+.tmp-route-check
+**/__pycache__
+*.pyc
+build
+dist
+release
+*.spec
+data
+src/config.json
+src/.env*
+src/app.log

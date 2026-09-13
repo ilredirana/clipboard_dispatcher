@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0d0f">
+    <title>身份验证 · Clipboard Dispatcher</title>
+    <link rel="icon" type="image/svg+xml" href="{{ request.scope.get('root_path', '') }}/static/favicon.svg?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ request.scope.get('root_path', '') }}/static/css/style.css?v={{ asset_version }}">
+</head>
+<body class="auth-page">
+    <main class="auth-shell">
+        <section class="auth-story">
+            <a class="brand brand-auth" href="/" aria-label="Clipboard Dispatcher">
+                <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
+                <span class="brand-copy"><strong>Clipboard</strong><span>Dispatcher</span></span>
+            </a>
+            <div class="auth-story-copy">
+                <span class="eyebrow">个人剪贴板同步</span>
+                <h1>在你的设备之间<br>同步剪贴板内容。</h1>
+                <p>登录后可管理设备、查看同步情况和调整设置。</p>
+            </div>
+            <div class="auth-facts">
+                <span><i></i>自行部署</span><span><i></i>每台设备独立凭据</span><span><i></i>支持 HTTPS</span>
+            </div>
+        </section>
+        <section class="auth-form-panel">
+            <div class="auth-form-wrap">
+                <span class="auth-index">登录</span>
+                <h2>输入管理员 Token</h2>
+                <p>使用管理员 Token 登录。</p>
+                {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+                <form method="POST" action="/login" class="auth-form">
+                    <label for="login-token">管理员 Token</label>
+                    <input id="login-token" type="password" name="token" placeholder="粘贴你的访问凭据" required autofocus autocomplete="current-password">
+                    <button type="submit" class="btn btn-primary btn-block"><span>进入控制台</span><span aria-hidden="true">→</span></button>
+                </form>
+                <small class="auth-note">Token 仅用于登录此管理页面。</small>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0d0f">
+    <title>首次初始化 · Clipboard Dispatcher</title>
+    <link rel="icon" type="image/svg+xml" href="{{ request.scope.get('root_path', '') }}/static/favicon.svg?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ request.scope.get('root_path', '') }}/static/css/style.css?v={{ asset_version }}">
+</head>
+<body class="auth-page setup-page">
+    <main class="setup-shell">
+        <header class="setup-header">
+            <a class="brand brand-auth" href="/" aria-label="Clipboard Dispatcher">
+                <span class="brand-mark" aria-hidden="true"><span></span><span></span></span>
+                <span class="brand-copy"><strong>Clipboard</strong><span>Dispatcher</span></span>
+            </a>
+            <span class="version-chip">版本 {{ app_version }}</span>
+        </header>
+        <section class="setup-content">
+            <div class="setup-intro">
+                <span class="eyebrow">首次设置</span>
+                <h1>设置管理员<br>Token</h1>
+                <p>管理员 Token 用于登录和修改设置。系统已生成一个可直接使用的 Token，也可以替换为你自己的。</p>
+                <ol class="setup-steps">
+                    <li class="active"><span>01</span><div><strong>创建凭据</strong><small>当前步骤</small></div></li>
+                    <li><span>02</span><div><strong>接入设备</strong><small>初始化后完成</small></div></li>
+                    <li><span>03</span><div><strong>开始同步</strong><small>设备接入后即可使用</small></div></li>
+                </ol>
+            </div>
+            <div class="setup-form-card">
+                <div class="panel-heading compact"><div><span class="eyebrow">管理员 Token</span><h2>完成首次设置</h2></div></div>
+                {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+                <form method="POST" action="/setup" class="stack-form">
+                    <div class="field-block">
+                        <label for="auth-token">管理员 Token</label>
+                        <input id="auth-token" name="auth_token" type="password" minlength="32" value="{{ suggested_token }}" required autocomplete="new-password">
+                        <small>至少 32 个字符，建议保存到密码管理器。</small>
+                    </div>
+                    <div class="field-block">
+                        <label for="confirm-auth-token">确认管理员 Token</label>
+                        <input id="confirm-auth-token" name="confirm_auth_token" type="password" minlength="32" required autocomplete="new-password" placeholder="再次输入相同凭据">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block"><span>完成初始化</span><span aria-hidden="true">→</span></button>
+                </form>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}同步设备 · Clipboard Dispatcher{% endblock %}
+{% block content %}
+<div id="devices-page" class="page-stack">
+    <header class="page-header settings-hero">
+        <div>
+            <span class="eyebrow">设备管理</span>
+            <h1>管理同步设备</h1>
+            <p>添加设备后，可在这里查看配置并下载对应平台的导入文件。</p>
+        </div>
+    </header>
+    {% if server_enabled %}
+        {% include "_device_management.html" %}
+    {% else %}
+        <section class="panel data-panel empty-state-panel">
+            <h2>服务端尚未启用</h2>
+            <p>启用服务端后才能创建和管理同步设备。</p>
+            <a class="btn btn-primary" href="/settings">前往系统配置</a>
+        </section>
+    {% endif %}
+</div>
+{% endblock %}

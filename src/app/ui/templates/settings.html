@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}系统配置 · Clipboard Dispatcher{% endblock %}
+{% block content %}
+<div id="settings-page" class="page-stack" data-runtime-mode="{% if docker_runtime %}docker_server{% elif desktop_runtime %}desktop{% else %}server_only{% endif %}">
+    <header class="page-header settings-hero">
+        <div>
+            <span class="eyebrow">系统配置</span>
+            <h1>把服务和同步分开管理</h1>
+            <p>先设置服务入口，再调整同步规则和本机行为。</p>
+        </div>
+        <div class="settings-header-note">
+            <strong>配置即时保存</strong>
+            <span>监听地址和端口修改后需重启程序。</span>
+        </div>
+    </header>
+
+    <div class="settings-layout">
+        <section class="panel settings-card settings-server-card">
+            <header class="settings-card-header">
+                <div class="settings-card-title">
+                    <span class="settings-index">01</span>
+                    <div><h2>服务端</h2><p>设置访问入口、内容保留时间和图片限制。</p></div>
+                </div>
+                {% if not docker_runtime %}
+                <label class="settings-master-toggle" for="cfg-server-enabled">
+                    <span><strong>启用服务端</strong><small>关闭后当前 Windows 程序仅作为客户端运行。</small></span>
+                    <span class="toggle"><input type="checkbox" id="cfg-server-enabled" onchange="toggleServerFields(this.checked)"><span class="slider"></span></span>
+                </label>
+                {% endif %}
+            </header>
+
+            <div id="server-fields" class="settings-card-body">
+                <section class="settings-group">
+                    <div class="settings-group-heading"><span>服务入口</span><p>移动设备和远程 Windows 使用公开服务地址接入。</p></div>
+                    <div class="settings-network-grid">
+                        {% if docker_runtime %}
+                        <div class="alert alert-info docker-runtime-note">
+                            <strong>Docker 内部监听已固定</strong>
+                            <span>容器使用 0.0.0.0:8000，外部端口在 docker-compose.yaml 中设置；首次启动自动生成管理员 Token 并保存到 data/config.json。</span>
+                        </div>
+                        {% else %}
+                        <div class="field-block"><label for="cfg-host">监听地址</label><input type="text" id="cfg-host" placeholder="0.0.0.0"><small>局域网接入使用 0.0.0.0。</small></div>
+                        <div class="field-block"><label for="cfg-port">服务端口</label><input type="number" id="cfg-port" min="1" max="65535" placeholder="8000"><small>修改后重启程序生效。</small></div>
+                        {% endif %}
+                        <div class="field-block settings-public-url-field">
+                            <label for="cfg-public-base-url">公开服务地址</label>
+                            <input type="url" id="cfg-public-base-url" placeholder="https://clipboard.example.com">
+                            <small>手机接入使用此地址。外网访问时必须填写可用的 HTTPS 地址。</small>
+                        </div>
+                    </div>
+                    <div class="settings-url-check">
+                        <button class="btn btn-secondary btn-sm" type="button" onclick="checkPublicUrlStatus()">检测公开地址</button>
+                        <span id="public-url-status" class="settings-url-status">尚未检测</span>
+                    </div>
+                </section>
+
+                <section class="settings-group">
+                    <div class="settings-group-heading"><span>同步限制</span><p>这些规则对所有已接入设备生效。</p></div>
+                    <div class="settings-limits-grid">
+                        <div class="field-block"><label for="cfg-ttl">内容保留时间 / 秒</label><input type="number" id="cfg-ttl" min="1" max="31536000" placeholder="300"><small>最新内容到期后不再提供下载。</small></div>
+                        <div class="field-block"><label for="cfg-max-size">文本大小上限 / 字节</label><input type="number" id="cfg-max-size" min="1" max="104857600" placeholder="5242880"><small>限制单次文本上传体积。</small></div>
+                        <label class="settings-toggle-card" for="cfg-image-sync"><span><strong>允许图片同步</strong><small>支持 PNG、JPEG、WebP。</small></span><span class="toggle"><input type="checkbox" id="cfg-image-sync"><span class="slider"></span></span></label>
+                        <div class="field-block"><label for="cfg-max-image-size">图片大小上限 / 字节</label><input type="number" id="cfg-max-image-size" min="1" max="10485760" placeholder="5242880"><small>默认值为 5 MB，图片分辨率上限为 4 亿像素。</small></div>
+                    </div>
+                </section>
+
+                <section class="settings-group settings-credentials-group">
+                    <div class="settings-group-heading"><span>管理员凭据</span><p>管理员 Token 用于登录控制台和修改服务配置。</p></div>
+                    <div class="field-block"><label for="cfg-auth-token">更新管理员 Token</label><input type="password" id="cfg-auth-token" minlength="32" autocomplete="new-password" placeholder="留空保持现有凭据"><small>保存新 Token 后会返回登录页，请使用新 Token 重新登录。</small></div>
+                </section>
+            </div>
+            <footer class="settings-savebar"><span>服务端配置</span><button class="btn btn-primary" type="button" onclick="saveServerConfig()">保存服务端配置</button></footer>
+        </section>
+
+        {% if desktop_runtime %}
+        <div class="settings-desktop-grid">
+            <section class="panel settings-card settings-client-card">
+                <header class="settings-card-header">
+                    <div class="settings-card-title"><span class="settings-index">02</span><div><h2>本机同步</h2><p>控制 Windows 本机如何发送和接收剪贴板。</p></div></div>
+                </header>
+                <div class="settings-card-body">
+                    <div id="local-client-credentials-note" class="alert alert-info settings-local-note">当前 Windows 同时运行服务端与客户端，自动使用本机服务地址、计算机名称和管理员 Token。</div>
+                    <div id="client-remote-fields" class="remote-fields">
+                        <div class="configuration-import">
+                            <input id="windows-config-import" class="visually-hidden" type="file" accept="application/json,.json" onchange="importWindowsConfiguration(this)">
+                            <label class="btn btn-primary btn-sm" for="windows-config-import">导入 Windows 配置</label>
+                            <span><strong>从服务端导入连接信息</strong><small>选择下载的 JSON 文件，地址、设备名称和 Token 会自动保存。</small></span>
+                        </div>
+                        <div class="settings-client-connection-grid">
+                            <div class="field-block"><label for="cfg-server-url">远程服务地址</label><input type="url" id="cfg-server-url" placeholder="https://your-server:8000"></div>
+                            <div class="field-block"><label for="cfg-client-token">设备 Token</label><input type="password" id="cfg-client-token" placeholder="留空保持现有凭据"></div>
+                            <div class="field-block settings-client-device-field"><label for="cfg-client-device-id">设备名称</label><input type="text" id="cfg-client-device-id" maxlength="64" placeholder="与服务端设备名称一致"><small>设备名称同时用作设备 ID，用于避免同步回传。</small></div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group settings-client-options">
+                        <div class="settings-group-heading"><span>同步行为</span><p>按本机使用习惯开启或关闭自动同步。</p></div>
+                        <div class="settings-switch-grid">
+                            <label class="settings-switch-card" for="cfg-auto-upload"><span><strong>自动上传</strong><small>监听本机剪贴板变化。</small></span><span class="toggle"><input type="checkbox" id="cfg-auto-upload"><span class="slider"></span></span></label>
+                            <label class="settings-switch-card" for="cfg-auto-download"><span><strong>自动下载</strong><small>接收其他设备的更新。</small></span><span class="toggle"><input type="checkbox" id="cfg-auto-download"><span class="slider"></span></span></label>
+                            <label class="settings-switch-card" for="cfg-ignore-empty"><span><strong>忽略空内容</strong><small>不上传空剪贴板。</small></span><span class="toggle"><input type="checkbox" id="cfg-ignore-empty"><span class="slider"></span></span></label>
+                        </div>
+                        <div class="field-block settings-debounce-field"><label for="cfg-debounce">上传防抖延迟 / ms</label><input type="number" id="cfg-debounce" min="0" max="60000" placeholder="500"><small>连续复制时，等待指定时间后再上传。</small></div>
+                    </div>
+                </div>
+                <footer class="settings-savebar"><span>本机同步配置</span><button class="btn btn-primary" type="button" onclick="saveClientConfig()">保存同步配置</button></footer>
+            </section>
+
+            <section class="panel settings-card settings-system-card">
+                <header class="settings-card-header">
+                    <div class="settings-card-title"><span class="settings-index">03</span><div><h2>启动方式</h2><p>控制程序是否随 Windows 登录启动。</p></div></div>
+                </header>
+                <div class="settings-card-body">
+                    <label class="settings-switch-card settings-autostart-card" for="cfg-auto-start"><span><strong>开机自动启动</strong><small>登录 Windows 后自动运行 Clipboard Dispatcher。</small></span><span class="toggle"><input type="checkbox" id="cfg-auto-start"><span class="slider"></span></span></label>
+                </div>
+                <footer class="settings-savebar"><span>启动设置</span><button class="btn btn-secondary" type="button" onclick="saveSystemConfig()">保存启动设置</button></footer>
+            </section>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

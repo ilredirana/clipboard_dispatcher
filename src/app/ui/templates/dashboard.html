@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}运行总览 · Clipboard Dispatcher{% endblock %}
+{% block content %}
+<div id="dashboard-page" class="page-stack">
+    <header class="page-header dashboard-hero">
+        <div>
+            <span class="eyebrow">运行总览</span>
+            <h1>剪贴板同步</h1>
+            <p>查看服务状态、已连接设备和最近的同步记录。</p>
+        </div>
+        <div class="hero-signal" aria-label="服务实时状态">
+            <span class="signal-orbit"><span></span></span>
+            <div><strong>状态已更新</strong><small>每 5 秒自动刷新</small></div>
+        </div>
+    </header>
+
+    <div class="dashboard-content-grid">
+        <div class="dashboard-overview">
+            <section class="metric-grid dashboard-summary-grid" aria-label="同步概况">
+                <article class="metric-card metric-card-primary">
+                    <div class="metric-top"><span>服务状态</span><span class="metric-kicker">当前状态</span></div>
+                    <div class="metric-value" id="server-status"><span class="status-dot online"></span>检查中</div>
+                    <p>服务端负责保存和分发最新的剪贴板内容。</p>
+                </article>
+                <article class="metric-card">
+                    <div class="metric-top"><span>运行方式</span><span class="metric-kicker">当前环境</span></div>
+                    <div class="metric-value metric-value-compact" id="runtime-mode">读取中</div>
+                    <p>当前程序的运行模式。</p>
+                </article>
+            </section>
+
+            <section class="metric-grid dashboard-detail-grid" aria-label="服务信息">
+                <article class="metric-card metric-card-small dashboard-sync-card">
+                    <div class="metric-top"><span>跨设备同步</span><span class="metric-kicker">本次启动</span></div>
+                    <div class="metric-value metric-number" id="cross-device-sync-count">0</div>
+                    <p>一次上传被另一台设备下载后，记为一次同步。</p>
+                </article>
+                <article class="metric-card metric-card-small">
+                    <div class="metric-top"><span>在线连接</span><span class="metric-kicker">正在接收更新</span></div>
+                    <div class="metric-value metric-number" id="sse-count">0</div>
+                    <p>当前等待同步通知的连接数。</p>
+                </article>
+                <article class="metric-card metric-card-small">
+                    <div class="metric-top"><span>服务端口</span><span class="metric-kicker">程序监听</span></div>
+                    <div class="metric-value metric-number" id="server-port">0</div>
+                    <p>程序实际监听的端口。</p>
+                </article>
+                <article class="metric-card metric-card-small">
+                    <div class="metric-top"><span>程序版本</span><span class="metric-kicker">当前版本</span></div>
+                    <div class="metric-value" id="app-version">0.0.0</div>
+                    <p>当前正在运行的程序版本。</p>
+                </article>
+            </section>
+        </div>
+
+        <section class="sync-overview-grid" aria-label="最近同步">
+            <article class="sync-history-card dashboard-history-card">
+                <div class="panel-heading compact">
+                    <div><span class="eyebrow">最近同步</span><h2>刚刚发生的同步</h2></div>
+                    <span class="panel-meta">本次启动后记录</span>
+                </div>
+                <ul id="recent-sync-activities" class="sync-activity-list">
+                    <li class="sync-activity-empty">暂无同步活动</li>
+                </ul>
+            </article>
+        </section>
+    </div>
+</div>
+{% endblock %}
