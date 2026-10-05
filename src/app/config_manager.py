@@ -236,21 +236,25 @@ def init_at(config_dir: str) -> None:
     defaults = _default_config()
 
     try:
-        with open(_config_path, encoding="utf-8") as f:
-            _config = json.load(f)
+        with open(_config_path, encoding="utf-8-sig") as f:
+            loaded = json.load(f)
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise ValueError(f"配置文件无法解析：{_config_path}。请使用 UTF-8 编码并检查 JSON 格式：{exc}") from exc
     except FileNotFoundError:
         if is_docker:
             if docker_admin_token:
                 defaults["server"]["auth_token"] = docker_admin_token
             defaults["system"]["initialized"] = True
-        _config = _validate_config(defaults)
-        save()
+        with _lock:
+            _save_unlocked(_validate_config(defaults))
         logger.info("Default config created at %s", _config_path)
         return
 
-    merged = _migrate_device_identifiers(_migrate_device_tokens(_merge_missing(_config, defaults)))
-    legacy_devices_missing = "devices" not in _config
-    existing_system = _config.get("system")
+    if not isinstance(loaded, dict):
+        raise TypeError(f"配置文件根节点必须是 JSON 对象：{_config_path}")
+    merged = _migrate_device_identifiers(_migrate_device_tokens(_merge_missing(loaded, defaults)))
+    legacy_devices_missing = "devices" not in loaded
+    existing_system = loaded.get("system")
     if not isinstance(existing_system, dict) or "initialized" not in existing_system:
         merged["system"]["initialized"] = True
     if legacy_devices_missing and merged["server"]["enabled"]:
@@ -263,28 +267,39 @@ def init_at(config_dir: str) -> None:
             merged["server"]["auth_token"] = docker_admin_token
         merged["system"]["initialized"] = True
     merged = _clear_windows_all_in_one_client_credentials(merged)
-    validated = _validate_config(merged)
-    changed = validated != _config
-    _config = validated
-    if changed:
-        save()
-        logger.info("Config migrated with missing fields")
+    try:
+        validated = _validate_config(merged)
+    except ValidationError as exc:
+        errors = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in exc.errors(include_input=False, include_url=False)
+        )
+        raise ValueError(f"配置字段无效：{_config_path}。{errors}") from None
+    changed = validated != loaded
+    with _lock:
+        if changed:
+            _save_unlocked(validated)
+            logger.info("Config migrated with missing fields")
+        else:
+            _config = validated
     logger.info("Config loaded from %s", _config_path)
 
 
-def _save_unlocked() -> None:
-    """将配置写入磁盘（内部使用，调用方需持有 _lock）。"""
+def _save_unlocked(config: dict) -> None:
+    """磁盘替换成功后发布配置；调用方需持有 _lock，写入失败时保留旧内存状态。"""
+    global _config
     temp_path = f"{_config_path}.tmp"
     with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(_config, f, indent=2, ensure_ascii=False)
+        json.dump(config, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
     os.replace(temp_path, _config_path)
+    _config = copy.deepcopy(config)
 
 def save() -> None:
     """线程安全地将配置写入磁盘。"""
     with _lock:
-        _save_unlocked()
+        _save_unlocked(_config)
 
 
 def get(key: str, default: Any = None) -> Any:
@@ -312,9 +327,7 @@ def set(key: str, value: Any) -> None:
             return
         cfg[keys[-1]] = value
         validated = _validate_config(candidate)
-        _config.clear()
-        _config.update(validated)
-        _save_unlocked()
+        _save_unlocked(validated)
 
 
 def get_all() -> dict:
@@ -350,9 +363,7 @@ def create_device(name: str, platform: DevicePlatform, created_at: float) -> Dev
         _ensure_device_name_available(candidate["devices"]["records"], record.name, "")
         candidate["devices"]["records"].append(record.model_dump(mode="json"))
         validated = _validate_config(candidate)
-        _config.clear()
-        _config.update(validated)
-        _save_unlocked()
+        _save_unlocked(validated)
     return record, token
 
 
@@ -371,9 +382,7 @@ def rotate_device_token(device_id: str) -> DeviceCredential:
             validated_record = DeviceRecord.model_validate(updated_record)
             records[index] = validated_record.model_dump(mode="json")
             validated = _validate_config(candidate)
-            _config.clear()
-            _config.update(validated)
-            _save_unlocked()
+            _save_unlocked(validated)
             return validated_record, token
     raise KeyError(f"设备不存在：{device_id}")
 
@@ -414,9 +423,7 @@ def update_device_name(device_id: str, name: str) -> DeviceRecord:
             if candidate["client"].get("device_id") == device_id:
                 candidate["client"]["device_id"] = updated_record.device_id
             validated = _validate_config(candidate)
-            _config.clear()
-            _config.update(validated)
-            _save_unlocked()
+            _save_unlocked(validated)
             return updated_record
     raise KeyError(f"设备不存在：{device_id}")
 
@@ -438,9 +445,7 @@ def _update_device(device_id: str, changes: dict[str, str | bool | float | None]
             validated_record = DeviceRecord.model_validate(updated_record)
             records[index] = validated_record.model_dump(mode="json")
             validated = _validate_config(candidate)
-            _config.clear()
-            _config.update(validated)
-            _save_unlocked()
+            _save_unlocked(validated)
             return validated_record
     raise KeyError(f"设备不存在：{device_id}")
 
@@ -471,9 +476,7 @@ def delete_device(device_id: str) -> None:
             raise KeyError(f"设备不存在：{device_id}")
         candidate["devices"]["records"] = updated_records
         validated = _validate_config(candidate)
-        _config.clear()
-        _config.update(validated)
-        _save_unlocked()
+        _save_unlocked(validated)
 
 
 def record_device_seen(device_id: str, seen_at: float) -> None:
@@ -496,9 +499,7 @@ def complete_initialization(auth_token: str) -> None:
         candidate["system"]["initialized"] = True
         candidate = _clear_windows_all_in_one_client_credentials(candidate)
         validated = _validate_config(candidate)
-        _config.clear()
-        _config.update(validated)
-        _save_unlocked()
+        _save_unlocked(validated)
 
 
 def update_section(section: str, data: dict) -> None:
@@ -512,9 +513,7 @@ def update_section(section: str, data: dict) -> None:
             candidate[section].update(data)
             candidate = _clear_windows_all_in_one_client_credentials(candidate)
             validated = _validate_config(candidate)
-            _config.clear()
-            _config.update(validated)
-            _save_unlocked()
+            _save_unlocked(validated)
 
 
 def import_windows_client_configuration(configuration: WindowsClientConfiguration) -> None:
@@ -525,9 +524,13 @@ def import_windows_client_configuration(configuration: WindowsClientConfiguratio
         candidate = copy.deepcopy(_config)
         candidate["client"].update(configuration.model_dump(mode="json"))
         validated = _validate_config(candidate)
-        _config.clear()
-        _config.update(validated)
-        _save_unlocked()
+        _save_unlocked(validated)
+
+
+def get_sync_connection() -> tuple[str, str]:
+    """持有配置锁读取同一版本的服务地址与鉴权凭据。"""
+    with _lock:
+        return effective_server_url().rstrip("/"), effective_auth_token()
 
 
 def effective_server_url() -> str:

@@ -87,13 +87,13 @@ def clipboard_monitor_loop(stop_event: threading.Event) -> None:
             continue
 
         debounce_seconds = config_manager.get("client.debounce_delay_ms", 500) / 1000.0
-        stop_event.wait(debounce_seconds)
+        if stop_event.wait(debounce_seconds):
+            return
         stable_item = _read_item_for_loop()
         if stable_item is None:
             stop_event.wait(POLL_INTERVAL)
             continue
         if stable_item.kind != current.kind or stable_item.sha256 != current.sha256:
-            last_item = stable_item
             stop_event.wait(POLL_INTERVAL)
             continue
 

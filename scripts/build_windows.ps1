@@ -23,5 +23,14 @@ if (-not (Test-Path -LiteralPath $taskerPath)) {
 }
 
 & $pythonPath -m pip install -r (Join-Path $projectRoot 'src\requirements.txt')
+if ($LASTEXITCODE -ne 0) {
+    throw "应用依赖安装失败，退出码：$LASTEXITCODE"
+}
 & $pythonPath -m pip install -r (Join-Path $projectRoot 'src\requirements-build.txt')
+if ($LASTEXITCODE -ne 0) {
+    throw "构建依赖安装失败，退出码：$LASTEXITCODE"
+}
 & $pythonPath -m PyInstaller --noconfirm --clean --windowed --onefile --name ClipboardDispatcher --distpath $distPath --workpath $buildPath --paths $appPath --collect-submodules server --collect-submodules client --hidden-import config_manager --hidden-import tray --add-data "$uiPath;ui" --add-data "$taskerPath;tasker" $entryPoint
+if ($LASTEXITCODE -ne 0) {
+    throw "Windows EXE 构建失败，退出码：$LASTEXITCODE"
+}

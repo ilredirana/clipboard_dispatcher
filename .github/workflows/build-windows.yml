@@ -1,0 +1,78 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 / Python 3.12
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: src/requirements*.txt
+
+      - name: Create project environment
+        run: python -m venv .venv
+
+      - name: Install development dependencies
+        run: .\.venv\Scripts\python.exe -m pip install -r src/requirements-dev.txt
+
+      - name: Check code
+        run: .\.venv\Scripts\python.exe -m ruff check .
+
+      - name: Run tests
+        run: .\.venv\Scripts\python.exe -m pytest -q src/tests
+
+      - name: Validate release resources
+        run: .\.venv\Scripts\python.exe scripts/validate_release.py
+
+      - name: Build EXE
+        run: ./scripts/build_windows.ps1
+
+      - name: Verify packaged application
+        run: .\.venv\Scripts\python.exe scripts/smoke_windows_ci.py
+
+      - name: Generate SHA256
+        run: |
+          $hash = (Get-FileHash -LiteralPath dist/ClipboardDispatcher.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ClipboardDispatcher.exe" | Set-Content -LiteralPath dist/ClipboardDispatcher.exe.sha256 -Encoding ascii
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v7
+        with:
+          name: ClipboardDispatcher-windows-x64
+          path: |
+            dist/ClipboardDispatcher.exe
+            dist/ClipboardDispatcher.exe.sha256
+          if-no-files-found: error
+          retention-days: 30

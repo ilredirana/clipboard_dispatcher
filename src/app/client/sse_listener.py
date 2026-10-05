@@ -34,20 +34,22 @@ def sse_listener_loop(stop_event: threading.Event) -> None:
             stop_event.wait(_INITIAL_RETRY)
             continue
 
-        url = config_manager.effective_sse_url()
-        if not url or "://" not in url:
+        connection = config_manager.get_sync_connection()
+        base_url, auth_token = connection
+        if not base_url or "://" not in base_url:
             logger.warning("SSE URL not configured, retrying in %ds", retry_delay)
             stop_event.wait(retry_delay)
             retry_delay = min(retry_delay * 2, _MAX_RETRY)
             continue
 
-        headers = api_client.request_headers()
+        url = f"{base_url}/api/clipboard/stream"
+        headers = api_client.request_headers(auth_token)
         logger.info("SSE connecting to %s", url)
         try:
             # 连接/重连时补一次当前云端状态，弥补离线期间可能错过的事件。
             _sync_current_item()
             with (
-                httpx.Client(timeout=httpx.Timeout(connect=10, read=90, write=10, pool=10)) as client,
+                api_client.create_http_client(url, httpx.Timeout(connect=10, read=90, write=10, pool=10)) as client,
                 client.stream("GET", url, headers=headers) as response,
             ):
                 response.raise_for_status()
@@ -58,7 +60,7 @@ def sse_listener_loop(stop_event: threading.Event) -> None:
                         return
                     if not config_manager.get("client.enable_auto_download", True):
                         break
-                    if url != config_manager.effective_sse_url() or headers != api_client.request_headers():
+                    if connection != config_manager.get_sync_connection():
                         break
                     if line.startswith("data:"):
                         _handle_event(line[len("data:"):].strip())

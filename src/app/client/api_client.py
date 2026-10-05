@@ -3,7 +3,9 @@
 import logging
 import time
 from dataclasses import dataclass
+from ipaddress import ip_address
 from typing import Literal
+from urllib.parse import urlsplit
 
 import config_manager
 import httpx
@@ -13,7 +15,6 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 10.0
 _MAX_ATTEMPTS = 3
 _IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
-_client: httpx.Client | None = None
 
 
 class ClipboardApiError(RuntimeError):
@@ -40,22 +41,26 @@ class RemoteClipboardItem:
     content: str | bytes
 
 
-def _get_client() -> httpx.Client:
-    """获取复用的 HTTP 客户端。"""
-    global _client
-    if _client is None or _client.is_closed:
-        _client = httpx.Client(timeout=_TIMEOUT)
-    return _client
+def create_http_client(url: str, timeout: httpx.Timeout) -> httpx.Client:
+    """回环请求不加载代理和证书环境变量，远程请求保留系统设置。"""
+    host = urlsplit(url).hostname
+    if host is None:
+        raise ValueError(f"服务地址缺少主机名：{url}")
+    local = host.lower() == "localhost"
+    try:
+        local = local or ip_address(host).is_loopback
+    except ValueError:
+        # 域名交给 HTTP 客户端解析。
+        local = host.lower() == "localhost"
+    try:
+        return httpx.Client(timeout=timeout, trust_env=not local)
+    except (OSError, ValueError, ImportError) as exc:
+        raise NetworkApiError(f"无法初始化 HTTP 连接，请检查代理与证书设置：host={host}，{exc}") from exc
 
 
-def request_headers() -> dict[str, str]:
-    """构建设备鉴权请求头。"""
-    return {"Authorization": f"Bearer {config_manager.effective_auth_token()}"}
-
-
-def _base_url() -> str:
-    """返回当前有效的服务端地址。"""
-    return config_manager.effective_server_url().rstrip("/")
+def request_headers(auth_token: str) -> dict[str, str]:
+    """使用同一连接快照中的设备凭据构建请求头。"""
+    return {"Authorization": f"Bearer {auth_token}"}
 
 
 def _raise_server_error(response: httpx.Response) -> None:
@@ -79,25 +84,22 @@ def _raise_server_error(response: httpx.Response) -> None:
 
 
 def _request(method: str, path: str, **kwargs: object) -> httpx.Response:
-    """发送请求，并仅对网络异常进行有限重试。"""
-    last_error: httpx.HTTPError | None = None
+    """固定地址与凭据完成一次请求及重试，各线程独立管理连接生命周期。"""
+    last_error: httpx.HTTPError | NetworkApiError | None = None
     custom_headers = kwargs.pop("headers", None)
-    headers = request_headers()
+    base_url, auth_token = config_manager.get_sync_connection()
+    headers = request_headers(auth_token)
     if isinstance(custom_headers, dict):
         headers.update({str(key): str(value) for key, value in custom_headers.items()})
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
-            response = _get_client().request(
-                method,
-                f"{_base_url()}{path}",
-                headers=headers,
-                **kwargs,
-            )
+            with create_http_client(base_url, httpx.Timeout(_TIMEOUT)) as client:
+                response = client.request(method, f"{base_url}{path}", headers=headers, **kwargs)
             if response.is_error:
                 _raise_server_error(response)
             return response
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, NetworkApiError) as exc:
             last_error = exc
             logger.warning(
                 "Clipboard API request failed",
@@ -131,7 +133,6 @@ def upload_image(content: bytes) -> None:
         "/api/clipboard/upload",
         content=content,
         headers={
-            **request_headers(),
             "Content-Type": "application/octet-stream",
         },
     )
