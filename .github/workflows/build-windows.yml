@@ -56,6 +56,17 @@ jobs:
       - name: Validate release resources
         run: .\.venv\Scripts\python.exe scripts/validate_release.py
 
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = & .\.venv\Scripts\python.exe -c "import runpy; print(runpy.run_path('src/app/server/version.py')['APP_VERSION'])"
+          if ($LASTEXITCODE -ne 0) { throw '无法读取应用版本' }
+          if ($env:RELEASE_TAG -ne "v$version") {
+            throw "版本标签 $env:RELEASE_TAG 与应用版本 v$version 不一致"
+          }
+
       - name: Build EXE
         run: ./scripts/build_windows.ps1
 
@@ -76,3 +87,28 @@ jobs:
             dist/ClipboardDispatcher.exe.sha256
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-2022
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified EXE
+        uses: actions/download-artifact@v8
+        with:
+          name: ClipboardDispatcher-windows-x64
+          path: dist
+
+      - name: Publish release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create $env:RELEASE_TAG dist/ClipboardDispatcher.exe dist/ClipboardDispatcher.exe.sha256 --repo $env:GH_REPO --verify-tag --title "Clipboard Dispatcher $env:RELEASE_TAG" --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release 发布失败：$env:RELEASE_TAG" }

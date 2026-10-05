@@ -8,7 +8,7 @@ WORKDIR /src
 
 # 镜像部署需要将运行所需源码写入镜像。Python 依赖在容器首次启动时安装。
 COPY src/requirements-server.txt .
-COPY src/app/__init__.py src/app/config_manager.py src/app/config_schema.py src/app/main.py /src/app/
+COPY src/app/__init__.py src/app/config_manager.py src/app/config_schema.py src/app/main.py src/app/startup.py /src/app/
 COPY src/app/server /src/app/server
 COPY src/app/ui /src/app/ui
 COPY src/tasker /src/tasker
