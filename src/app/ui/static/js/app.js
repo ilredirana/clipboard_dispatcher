@@ -350,7 +350,9 @@ function renderDeviceProvisioning(data) {
 
     const taskerSection = getProvisioningElement(root, 'tasker');
     if (data.tasker && taskerSection) {
+        if (!Number.isFinite(data.tasker.expires_at)) throw new TypeError('Tasker 配置缺少有效的到期时间');
         taskerSection.hidden = false;
+        getProvisioningElement(root, 'tasker-expiry').textContent = `有效期至 ${formatDeviceTime(data.tasker.expires_at)}，每个文件仅可下载一次。`;
         getProvisioningElement(root, 'tasker-project-qr').src = data.tasker.project_qr_url;
         getProvisioningElement(root, 'tasker-upload-qr').src = data.tasker.upload_qr_url;
         getProvisioningElement(root, 'tasker-download-qr').src = data.tasker.download_qr_url;
@@ -384,6 +386,18 @@ async function viewDeviceConfiguration(device) {
         showToast(`已读取“${data.name}”的当前配置`);
     } catch (e) {
         showToast(`读取设备当前配置失败：${e.message}`, 'error');
+    }
+}
+
+async function refreshTaskerConfiguration(button) {
+    const row = button.closest('.device-assets-row');
+    if (!row) throw new TypeError('无法定位当前设备配置');
+    try {
+        const data = await API.get(`/api/devices/${encodeURIComponent(row.dataset.provisioningDeviceId)}/configuration`);
+        renderDeviceProvisioning(data);
+        showToast('已生成新的下载链接，有效期 10 分钟');
+    } catch (e) {
+        showToast(`重新获取下载链接失败：${e.message}`, 'error');
     }
 }
 
@@ -536,11 +550,12 @@ async function loadDevices() {
                 () => viewDeviceConfiguration(device),
             );
             provisioningButton.dataset.deviceAction = 'provision';
+            provisioningButton.disabled = !device.enabled;
             actions.appendChild(provisioningButton);
             actions.appendChild(makeDeviceActionMenu(device));
             row.appendChild(actions);
             body.appendChild(row);
-            if (savedProvisioningRow) {
+            if (savedProvisioningRow && device.enabled) {
                 syncProvisioningRowIdentity(savedProvisioningRow, device);
                 body.appendChild(savedProvisioningRow);
             }

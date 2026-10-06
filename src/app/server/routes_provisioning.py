@@ -1,8 +1,10 @@
-"""移动设备导入资产与稳定下载路由。"""
+"""移动设备导入资产与一次性授权下载路由。"""
 
 import io
 import json
 import logging
+import re
+import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -14,6 +16,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 from qrcode.constants import ERROR_CORRECT_M
+from server import provisioning_tickets
+from server.provisioning_tickets import TaskerArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +54,7 @@ class IOSProvisioningResponse(BaseModel):
 
 
 class TaskerProvisioningResponse(BaseModel):
-    """已写入设备变量的 Tasker 项目和单任务下载链接。"""
+    """通过短时票据授权的 Tasker 项目和单任务下载链接。"""
 
     project_url: str
     project_qr_url: str
@@ -58,6 +62,7 @@ class TaskerProvisioningResponse(BaseModel):
     download_url: str
     upload_qr_url: str
     download_qr_url: str
+    expires_at: float
 
 
 def get_external_url(request: Request) -> str:
@@ -161,7 +166,7 @@ def _build_configured_tasker_project_xml(base_url: str, auth_token: str, device_
 
 
 def _get_android_device(device_id: str, artifact_name: str) -> DeviceRecord:
-    """读取稳定 Tasker 资产对应的 Android 设备。"""
+    """仅允许启用的 Android 设备获取配置资产。"""
     if artifact_name not in _TASKER_ARTIFACTS:
         raise HTTPException(status_code=404, detail="不存在的 Tasker 导入资产")
     try:
@@ -170,7 +175,37 @@ def _get_android_device(device_id: str, artifact_name: str) -> DeviceRecord:
         raise HTTPException(status_code=404, detail="Tasker 设备不存在") from exc
     if record.platform != "android":
         raise HTTPException(status_code=404, detail="设备不是 Android 平台")
+    if not record.enabled:
+        raise HTTPException(status_code=403, detail="设备已禁用，无法获取接入配置")
     return record
+
+
+def _get_ticket(request: Request) -> str:
+    """拒绝缺失、重复或格式错误的票据，不允许管理员凭据绕过下载授权。"""
+    tickets = request.query_params.getlist("ticket")
+    if len(tickets) != 1 or re.fullmatch(r"[A-Za-z0-9_-]{43}", tickets[0]) is None:
+        raise HTTPException(status_code=401, detail="下载票据缺失或无效，请在管理页重新获取配置")
+    return tickets[0]
+
+
+def _get_artifact(artifact_name: str) -> TaskerArtifact:
+    """将外部资产名称校验为支持的三种下载类型。"""
+    if artifact_name == "project":
+        return "project"
+    if artifact_name == "upload":
+        return "upload"
+    if artifact_name == "download":
+        return "download"
+    raise HTTPException(status_code=404, detail="不存在的 Tasker 导入资产")
+
+
+def _require_ticket(ticket: str, record: DeviceRecord, artifact: TaskerArtifact) -> None:
+    """校验票据有效期及当前设备凭据，轮换后旧票据立即失效。"""
+    if not provisioning_tickets.ticket_is_valid(
+        provisioning_tickets.get_store_path(), ticket, record.device_id, artifact,
+        provisioning_tickets.secret_digest(record.token), time.time(),
+    ):
+        raise HTTPException(status_code=401, detail="下载票据已过期、已使用或已失效，请在管理页重新获取配置")
 
 
 def create_ios_provisioning(base_url: str, device_id: str, auth_token: str) -> IOSProvisioningResponse:
@@ -200,17 +235,25 @@ def create_ios_provisioning(base_url: str, device_id: str, auth_token: str) -> I
 
 
 def create_tasker_provisioning(base_url: str, device_id: str) -> TaskerProvisioningResponse:
-    """生成绑定设备 ID 且长期有效的 Tasker 项目和单任务链接。"""
+    """为启用设备的每种资产签发独立的短时下载票据。"""
+    record = _get_android_device(device_id, "project")
+    now = time.time()
+    token_hash = provisioning_tickets.secret_digest(record.token)
+    store_path = provisioning_tickets.get_store_path()
+    project_ticket, expires_at = provisioning_tickets.issue_ticket(store_path, device_id, "project", token_hash, now)
+    upload_ticket, _upload_expiry = provisioning_tickets.issue_ticket(store_path, device_id, "upload", token_hash, now)
+    download_ticket, _download_expiry = provisioning_tickets.issue_ticket(store_path, device_id, "download", token_hash, now)
     encoded_device_id = quote(device_id, safe="")
     prefix = f"{base_url.rstrip('/')}/setup/tasker/configured/{encoded_device_id}"
     qr_prefix = f"{base_url.rstrip('/')}/setup/tasker/configured/qr/{encoded_device_id}"
     return TaskerProvisioningResponse(
-        project_url=f"{prefix}/project",
-        project_qr_url=f"{qr_prefix}/project",
-        upload_url=f"{prefix}/upload",
-        download_url=f"{prefix}/download",
-        upload_qr_url=f"{qr_prefix}/upload",
-        download_qr_url=f"{qr_prefix}/download",
+        project_url=f"{prefix}/project?ticket={project_ticket}",
+        project_qr_url=f"{qr_prefix}/project?ticket={project_ticket}",
+        upload_url=f"{prefix}/upload?ticket={upload_ticket}",
+        download_url=f"{prefix}/download?ticket={download_ticket}",
+        upload_qr_url=f"{qr_prefix}/upload?ticket={upload_ticket}",
+        download_qr_url=f"{qr_prefix}/download?ticket={download_ticket}",
+        expires_at=expires_at,
     )
 
 
@@ -220,15 +263,19 @@ async def get_configured_tasker_qr(
     artifact_name: str,
     request: Request,
 ) -> Response:
-    """生成指向设备当前 Tasker 导入资产的稳定二维码。"""
-    _get_android_device(device_id, artifact_name)
+    """只为有效票据生成二维码，不签发新票据或消耗下载次数。"""
+    ticket = _get_ticket(request)
+    artifact = _get_artifact(artifact_name)
+    record = _get_android_device(device_id, artifact_name)
+    _require_ticket(ticket, record, artifact)
     base_url = get_external_url(request)
     encoded_device_id = quote(device_id, safe="")
     return Response(
         content=_generate_qr_svg(
-            f"{base_url.rstrip('/')}/setup/tasker/configured/{encoded_device_id}/{artifact_name}"
+            f"{base_url.rstrip('/')}/setup/tasker/configured/{encoded_device_id}/{artifact_name}?ticket={ticket}"
         ),
         media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -238,8 +285,11 @@ async def download_configured_tasker_artifact(
     artifact_name: str,
     request: Request,
 ) -> Response:
-    """按设备当前 Token 重复下载已配置的 Tasker 项目或单任务 XML。"""
+    """生成 XML 后原子核销票据，只向获得授权的唯一下载请求返回设备凭据。"""
+    ticket = _get_ticket(request)
+    artifact = _get_artifact(artifact_name)
     record = _get_android_device(device_id, artifact_name)
+    _require_ticket(ticket, record, artifact)
     base_url = get_external_url(request)
     if artifact_name == "project":
         xml_content = _build_configured_tasker_project_xml(
@@ -255,6 +305,11 @@ async def download_configured_tasker_artifact(
             record.token,
             record.device_id,
         )
+    if not provisioning_tickets.consume_ticket(
+        provisioning_tickets.get_store_path(), ticket, record.device_id, artifact,
+        provisioning_tickets.secret_digest(record.token), time.time(),
+    ):
+        raise HTTPException(status_code=401, detail="下载票据已过期、已使用或已失效，请在管理页重新获取配置")
     return Response(
         content=xml_content,
         media_type="application/xml",

@@ -16,6 +16,10 @@ A self-hosted clipboard service for syncing text and images. Run the Windows app
 
 ## Download the Windows EXE
 
+### v1.0.1 security upgrade
+
+This release fixes an authentication bypass in Android Tasker configuration downloads. After upgrading, reissue the token for every existing Android device in the administration page, then download and import the updated Tasker project. This revokes credentials exposed by older versions. Legacy download URLs without authorization are disabled.
+
 1. Open the [latest release](https://github.com/ilredirana/clipboard_dispatcher/releases/latest) and read its release notes.
 2. Download `ClipboardDispatcher.exe` and `ClipboardDispatcher.exe.sha256` from **Assets** and place them in the same directory.
 3. Verify the checksum using the PowerShell commands below, then run the EXE.
@@ -83,12 +87,12 @@ The workflow is defined in [`.github/workflows/build-windows.yml`](.github/workf
 
 The pipeline uses Windows and 64-bit Python 3.12. It runs Ruff, tests, release resource checks, PyInstaller packaging, and a packaged EXE smoke test before uploading the EXE and SHA256 file. The cloud smoke test runs in server-only mode. Actual tray loading is verified by the local desktop smoke test.
 
-Pushing a version tag also publishes the verified EXE and checksum to GitHub Releases. The tag must be `v<application-version>`: for example, `v1.0.0` for application version `1.0.0`. Branch pushes and Pull Requests produce development builds only.
+Pushing a version tag also publishes the verified EXE and checksum to GitHub Releases. The tag must be `v<application-version>`: for example, `v1.0.1` for application version `1.0.1`. Branch pushes and Pull Requests produce development builds only.
 
 Before publishing a new version, update and commit the versions in `src/app/server/version.py` and `src/docker-compose.image.yaml`, then create and push the matching tag. For example, after updating to `1.0.1`:
 
 ```bash
-git tag -a v1.0.1 -m "Clipboard Dispatcher 1.0.1"
+git tag -a v1.0.1 -m "Clipboard Dispatcher 1.0.1: describe changes and upgrade steps"
 git push origin v1.0.1
 ```
 
@@ -125,7 +129,7 @@ The image is built locally. Images included in offline deployment packages also 
 Build the image:
 
 ```powershell
-.\scripts\build_docker_image.ps1 -Architecture amd64 -Image clipboard-dispatcher:1.0.0
+.\scripts\build_docker_image.ps1 -Architecture amd64 -Image clipboard-dispatcher:1.0.1
 ```
 
 Start the server:
@@ -181,7 +185,11 @@ Create or select an Android device in the management page to obtain:
 1. A configured `Clipboard Dispatcher.prj.xml` containing upload and download tasks.
 2. Configured XML files for the individual upload and download tasks.
 3. Tasks with the public server URL and device token already embedded; no Tasker global variables are required.
-4. Reusable download links tied to the device ID. Each download uses the device's current token, so reissuing a token does not change the link.
+4. Download links use random 256-bit tickets that expire after 10 minutes and allow one successful download per file. QR previews do not consume tickets. Each ticket is bound to the device, file type, and token at issuance; rotating the device token invalidates old links. Select “重新获取下载链接” (Refresh download links) after expiration or use. Links and QR codes contain temporary authorization and must not be shared.
+
+Disabled devices cannot obtain connection configurations, and changing the enabled state revokes pending download tickets. Obtain new links after re-enabling a device.
+
+The `provisioning_tickets.sqlite3` database sits beside `config.json` and stores only SHA256 hashes of tickets and device tokens. Application access logs redact Tasker URL query parameters; configure reverse proxies to omit these parameters from their logs as well.
 5. Import instructions and sync limitations in the [Tasker guide (Chinese)](src/tasker/README.zh-CN.md).
 
 ## Validation and builds

@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from server.version import APP_VERSION
+
 
 def test_release_artifacts_are_consistent() -> None:
     """发布校验脚本必须通过，避免 Windows 与 Docker 版本漂移。"""
@@ -16,4 +18,4 @@ def test_release_artifacts_are_consistent() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr or result.stdout
-    assert "发行资源校验通过：1.0.0" in result.stdout
+    assert f"发行资源校验通过：{APP_VERSION}" in result.stdout

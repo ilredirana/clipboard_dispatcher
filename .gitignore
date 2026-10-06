@@ -8,6 +8,7 @@ __pycache__/
 
 /src/config.json
 /src/app.log
+/src/provisioning_tickets.sqlite3*
 /src/data/config.json
 /build/
 /dist/

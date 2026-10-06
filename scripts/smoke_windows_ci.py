@@ -15,6 +15,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from smoke_windows_build import remove_smoke_directory, reserve_local_port, terminate_process_tree, wait_for_health
 
 
+class TaskerDownload(BaseModel):
+    """验证打包程序返回的授权下载地址。"""
+
+    project_url: str = Field(min_length=1)
+
+
 class ProvisionedDevice(BaseModel):
     """仅读取构建验证所需的设备凭据，并校验接口响应。"""
 
@@ -22,6 +28,7 @@ class ProvisionedDevice(BaseModel):
 
     device_id: str = Field(min_length=1)
     token: str = Field(min_length=16)
+    tasker: TaskerDownload
 
 
 def require_status(response: httpx.Response, expected: int) -> None:
@@ -62,9 +69,12 @@ def verify_packaged_api(base_url: str) -> None:
         require_status(downloaded, 200)
         if downloaded.text != content or downloaded.headers.get("X-Clipboard-Kind") != "text":
             raise RuntimeError("打包程序上传和下载的文本内容不一致")
-        tasker = client.get(f"/setup/tasker/configured/{device.device_id}/project")
-        require_status(tasker, 200)
-        ElementTree.fromstring(tasker.content)
+        with httpx.Client(trust_env=False, timeout=10) as anonymous_client:
+            tasker = anonymous_client.get(device.tasker.project_url)
+            require_status(tasker, 200)
+            ElementTree.fromstring(tasker.content)
+            require_status(anonymous_client.get(device.tasker.project_url), 401)
+            require_status(anonymous_client.get(f"{base_url}/setup/tasker/configured/{device.device_id}/project"), 401)
         health = client.get("/health")
         require_status(health, 200)
         if health.json().get("initialized") is not True:

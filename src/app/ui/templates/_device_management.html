@@ -41,7 +41,8 @@
                 </div>
             </div>
             <div data-provisioning-role="tasker" class="platform-provisioning" hidden>
-                <div class="alert alert-info">Tasker 项目和任务已写入当前服务地址、设备 ID 与 Token，可随时重复查看和下载。重新签发后，同一下载链接会使用新 Token。</div>
+                <div class="alert alert-info"><span data-provisioning-role="tasker-expiry"></span> 下载链接和二维码含短时授权，请勿分享。过期或下载后，点击重新获取链接。</div>
+                <div class="utility-actions"><button class="btn btn-outline" type="button" onclick="refreshTaskerConfiguration(this)">重新获取下载链接</button></div>
                 <article class="provisioning-primary-method">
                     <div><span class="qr-label">推荐方式</span><h4>完整 Tasker 项目</h4><p>包含剪贴板变化自动上传和手动下载任务，导入后可直接使用。</p><a data-provisioning-role="tasker-project-download" class="btn btn-primary">下载已配置项目</a></div>
                     <img data-provisioning-role="tasker-project-qr" class="provisioning-qr" alt="已配置 Tasker 项目二维码" width="180" height="180">

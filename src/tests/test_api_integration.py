@@ -1,21 +1,29 @@
 """FastAPI 与配置持久化集成测试。"""
 
+import hashlib
 import json
+import logging
 import re
+import socket
+import sqlite3
 import time
-from io import BytesIO
-from urllib.parse import quote
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from io import BytesIO, StringIO
+from urllib.parse import parse_qs, quote, urlsplit
 
 import config_manager
+import httpx
 import pytest
 import server.app as app_module
 from client import api_client as clipboard_api_client
 from client import sse_listener
 from fastapi.testclient import TestClient
 from PIL import Image
-from server import routes_provisioning
+from server import provisioning_tickets, routes_provisioning
 from server.app import create_app
 from server.auth import create_local_login_code
+from server.logging_format import ProvisioningLogFormatter
 
 
 @pytest.fixture
@@ -641,8 +649,8 @@ def test_device_credentials_are_scoped_and_revocable(api_client):
     assert disabled.json()["enabled"] is False
     assert revoked_sync.status_code == 401
     assert stale_project.status_code == 404
-    assert revoked_project.status_code == 200
-    assert device["token"].encode("utf-8") in revoked_project.content
+    assert revoked_project.status_code == 403
+    assert device["token"].encode("utf-8") not in revoked_project.content
     assert deleted.status_code == 204
     assert deleted_project.status_code == 404
 
@@ -754,15 +762,15 @@ def test_android_device_creation_returns_configured_tasker_project(api_client):
     )
     data = created.json()
     tasker = data["tasker"]
+    project_qr = client.get(tasker["project_qr_url"])
     project = client.get(tasker["project_url"])
     repeated_project = client.get(tasker["project_url"])
-    project_qr = client.get(tasker["project_qr_url"])
     upload_task = client.get(tasker["upload_url"])
 
     assert created.status_code == 201
     assert data["windows"] is None
     assert data["ios"] is None
-    assert "expires_at" not in tasker
+    assert time.time() < tasker["expires_at"] <= time.time() + 600
     assert tasker["project_url"].startswith("https://clipboard.example.com/setup/tasker/configured/")
     assert quote(data["device_id"], safe="") in tasker["project_url"]
     assert project_qr.status_code == 200
@@ -772,10 +780,152 @@ def test_android_device_creation_returns_configured_tasker_project(api_client):
     assert "Clipboard%20Dispatcher.prj.xml" in project.headers["content-disposition"]
     assert upload_task.status_code == 200
     assert upload_task.headers["cache-control"] == "no-store"
-    assert repeated_project.status_code == 200
-    assert repeated_project.content == project.content
+    assert repeated_project.status_code == 401
+    assert data["token"].encode("utf-8") not in repeated_project.content
 
-def test_failed_tasker_generation_keeps_stable_download_available(api_client, monkeypatch):
+@pytest.mark.parametrize("artifact", ["project", "upload", "download"])
+def test_tasker_download_and_qr_require_bound_single_use_ticket(api_client, artifact):
+    client, headers, _admin_token, _device_headers = api_client
+    first = client.post("/api/devices", headers=headers, json={"name": "票据设备一", "platform": "android"}).json()
+    second = client.post("/api/devices", headers=headers, json={"name": "票据设备二", "platform": "android"}).json()
+    url = first["tasker"][f"{artifact}_url"]
+    qr_url = first["tasker"][f"{artifact}_qr_url"]
+    ticket = parse_qs(urlsplit(url).query)["ticket"][0]
+    wrong_artifact = "upload" if artifact == "project" else "project"
+    invalid_urls = [
+        urlsplit(url).path,
+        urlsplit(qr_url).path,
+        f"{urlsplit(url).path}?ticket={'x' * 43}",
+        f"{urlsplit(url).path}?ticket=short",
+        f"{url}&ticket={ticket}",
+        url.replace(quote(first["device_id"]), quote(second["device_id"])),
+        qr_url.replace(quote(first["device_id"]), quote(second["device_id"])),
+        url.replace(f"/{artifact}?", f"/{wrong_artifact}?"),
+        qr_url.replace(f"/{artifact}?", f"/{wrong_artifact}?"),
+    ]
+    for invalid_url in invalid_urls:
+        rejected = client.get(invalid_url, headers=headers)
+        assert rejected.status_code == 401
+        assert rejected.headers["cache-control"] == "no-store"
+        assert first["token"] not in rejected.text
+        assert second["token"] not in rejected.text
+    assert client.get(qr_url).status_code == 200
+    assert client.get(qr_url).status_code == 200
+    downloaded = client.get(url)
+    assert downloaded.status_code == 200
+    assert first["token"] in downloaded.text
+    assert client.get(url).status_code == 401
+    assert client.get(qr_url).status_code == 401
+
+
+def test_tasker_expired_tickets_cannot_download_or_preview(api_client, monkeypatch):
+    client, headers, _admin_token, _device_headers = api_client
+    monkeypatch.setattr(provisioning_tickets, "TICKET_TTL_SECONDS", 0)
+    created = client.post("/api/devices", headers=headers, json={"name": "过期票据", "platform": "android"}).json()
+    assert created["tasker"]["expires_at"] <= time.time()
+    for artifact in ("project", "upload", "download"):
+        assert client.get(created["tasker"][f"{artifact}_url"]).status_code == 401
+        assert client.get(created["tasker"][f"{artifact}_qr_url"]).status_code == 401
+
+
+def test_only_administrator_can_issue_configuration_tickets(api_client):
+    client, headers, _admin_token, device_headers = api_client
+    created = client.post("/api/devices", headers=headers, json={"name": "签发权限", "platform": "android"}).json()
+    configuration_url = f"/api/devices/{quote(created['device_id'])}/configuration"
+    assert client.get(configuration_url).status_code == 401
+    assert client.get(configuration_url, headers=device_headers).status_code == 401
+    assert client.get(configuration_url, headers={"Authorization": f"Bearer {created['token']}"}).status_code == 401
+    current = client.get(configuration_url, headers=headers)
+    assert current.status_code == 200
+    assert current.headers["cache-control"] == "no-store"
+    assert current.json()["tasker"]["project_url"] != created["tasker"]["project_url"]
+    assert current.json()["token"] == created["token"]
+
+
+@pytest.mark.parametrize("platform", ["android", "ios", "windows"])
+def test_disabled_devices_cannot_generate_configuration(api_client, platform):
+    client, headers, _admin_token, _device_headers = api_client
+    created = client.post("/api/devices", headers=headers, json={"name": "禁用配置", "platform": platform}).json()
+    device_path = f"/api/devices/{quote(created['device_id'])}"
+    assert client.put(f"{device_path}/enabled", headers=headers, json={"enabled": False}).status_code == 200
+    rejected = client.get(f"{device_path}/configuration", headers=headers)
+    assert rejected.status_code == 403
+    assert created["token"] not in rejected.text
+    assert client.post(f"{device_path}/provision", headers=headers).status_code == 409
+    if platform == "android":
+        assert client.get(created["tasker"]["project_url"]).status_code == 403
+        assert client.get(created["tasker"]["project_qr_url"]).status_code == 403
+    assert client.put(f"{device_path}/enabled", headers=headers, json={"enabled": True}).status_code == 200
+    if platform == "android":
+        assert client.get(created["tasker"]["project_url"]).status_code == 401
+        assert client.get(created["tasker"]["project_qr_url"]).status_code == 401
+        fresh = client.get(f"{device_path}/configuration", headers=headers).json()
+        assert client.get(fresh["tasker"]["project_url"]).status_code == 200
+
+
+def test_ticket_database_only_persists_secret_hashes(api_client):
+    client, headers, _admin_token, _device_headers = api_client
+    created = client.post("/api/devices", headers=headers, json={"name": "摘要存储", "platform": "android"}).json()
+    path = provisioning_tickets.get_store_path()
+    with closing(sqlite3.connect(path)) as connection:
+        rows = connection.execute(
+            "SELECT ticket_hash, device_id, artifact, token_hash, expires_at FROM provisioning_tickets"
+        ).fetchall()
+    assert len(rows) == 3
+    for ticket_hash, device_id, artifact, token_hash, expires_at in rows:
+        raw_ticket = parse_qs(urlsplit(created["tasker"][f"{artifact}_url"]).query)["ticket"][0]
+        assert ticket_hash == hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest()
+        assert token_hash == hashlib.sha256(created["token"].encode("utf-8")).hexdigest()
+        assert device_id == created["device_id"]
+        assert expires_at == created["tasker"]["expires_at"]
+        assert raw_ticket.encode("utf-8") not in path.read_bytes()
+    assert created["token"].encode("utf-8") not in path.read_bytes()
+
+
+def test_concurrent_real_http_downloads_consume_once_and_redact_logs(api_client):
+    from main import _start_server, _wait_for_server
+
+    client, headers, _admin_token, _device_headers = api_client
+    created = client.post("/api/devices", headers=headers, json={"name": "并发票据", "platform": "android"}).json()
+    parsed = urlsplit(created["tasker"]["project_url"])
+    ticket = parse_qs(parsed.query)["ticket"][0]
+    log_output = StringIO()
+    handler = logging.StreamHandler(log_output)
+    handler.setFormatter(ProvisioningLogFormatter("%(name)s %(message)s"))
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(handler)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        thread, server = _start_server(port, "127.0.0.1", [listener])
+        try:
+            _wait_for_server(server, thread, 5.0)
+            url = f"http://127.0.0.1:{port}{parsed.path}?%74icket={ticket}"
+
+            def download() -> httpx.Response:
+                return httpx.get(url, trust_env=False, timeout=5.0)
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                responses = list(pool.map(lambda _index: download(), range(4)))
+            assert sorted(response.status_code for response in responses) == [200, 401, 401, 401]
+            for response in responses:
+                assert (created["token"] in response.text) == (response.status_code == 200)
+            assert "uvicorn.access" in log_output.getvalue()
+            assert "httpx" in log_output.getvalue()
+            assert ticket not in log_output.getvalue()
+            assert created["token"] not in log_output.getvalue()
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5.0)
+            root_logger.removeHandler(handler)
+            root_logger.setLevel(original_level)
+        assert not thread.is_alive()
+
+
+def test_failed_tasker_generation_does_not_consume_ticket(api_client, monkeypatch):
     client, headers, _admin_token, _device_headers = api_client
     created = client.post(
         "/api/devices",
@@ -824,17 +974,22 @@ def test_existing_mobile_device_reprovision_rotates_token_without_creating_devic
         json={"kind": "text", "content": "新凭据"},
     )
     stale_download = client.get(old_project_url)
+    stale_qr = client.get(created["tasker"]["project_qr_url"])
 
     assert provisioned.status_code == 200
     assert data["device_id"] == created["device_id"]
     assert data["token"] != created["token"]
-    assert data["tasker"]["project_url"] == old_project_url
+    assert data["tasker"]["project_url"] != old_project_url
     assert len(config_manager.list_devices()) == device_count
     assert old_sync.status_code == 401
     assert new_sync.status_code == 200
-    assert stale_download.status_code == 200
+    assert stale_download.status_code == 401
+    assert stale_qr.status_code == 401
     assert created["token"].encode("utf-8") not in stale_download.content
-    assert data["token"].encode("utf-8") in stale_download.content
+    assert data["token"].encode("utf-8") not in stale_download.content
+    current_download = client.get(data["tasker"]["project_url"])
+    assert current_download.status_code == 200
+    assert data["token"].encode("utf-8") in current_download.content
 
 
 def test_invalid_config_is_rejected_without_persistence(api_client):
@@ -921,8 +1076,8 @@ def test_invalid_tasker_device_has_request_error(api_client):
 
     response = client.get("/setup/tasker/configured/invalid/upload")
 
-    assert response.status_code == 404
-    assert "Tasker 设备不存在" in response.json()["message"]
+    assert response.status_code == 401
+    assert "下载票据" in response.json()["message"]
 
 
 def test_clipboard_api_uses_only_upload_download_and_stream(api_client):

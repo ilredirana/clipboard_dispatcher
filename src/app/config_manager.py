@@ -39,6 +39,13 @@ RuntimeMode = Literal["windows_all_in_one", "docker_server", "server_only", "cli
 DeviceCredential = tuple[DeviceRecord, str]
 
 
+def get_config_path() -> str:
+    """返回已经初始化的配置文件路径，避免混用开发目录和测试目录。"""
+    if not _config_path:
+        raise RuntimeError("配置尚未初始化，无法获取运行数据路径")
+    return _config_path
+
+
 def get_config_dir() -> str:
     """获取配置目录路径。按优先级：Docker → 打包 EXE → Linux 服务端 → 开发环境。"""
     if os.environ.get("DOCKER_MODE") == "1":

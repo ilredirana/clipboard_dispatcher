@@ -16,6 +16,10 @@
 
 ## 下载 Windows EXE
 
+### v1.0.1 安全升级
+
+此版本修复 Android Tasker 配置下载的认证绕过。升级后，请在管理页为所有已有 Android 设备重新签发 Token，并重新下载、导入 Tasker 项目，以撤销旧版本已泄露的凭据。旧的无授权下载链接已停用。
+
 1. 打开 [最新正式版本](https://github.com/ilredirana/clipboard_dispatcher/releases/latest)，阅读版本说明。
 2. 在 **Assets** 中下载 `ClipboardDispatcher.exe` 和 `ClipboardDispatcher.exe.sha256`，放入同一目录。
 3. 按下方 PowerShell 命令校验文件，然后运行 EXE。
@@ -85,12 +89,12 @@ python -m venv .venv
 
 流水线使用 Windows 和 Python 3.12（64 位），依次执行 Ruff、测试、发行资源校验、PyInstaller 打包和 EXE 启动验证，最后上传 EXE 与 SHA256 校验文件。云端 EXE 验证使用服务端模式；真实托盘加载由本地桌面冒烟测试验证。
 
-推送版本标签还会将通过验证的 EXE 和校验文件发布到 GitHub Releases。标签必须为 `v<应用版本>`，例如应用版本为 `1.0.0` 时使用 `v1.0.0`。分支推送和 Pull Request 只生成开发构建。
+推送版本标签还会将通过验证的 EXE 和校验文件发布到 GitHub Releases。标签必须为 `v<应用版本>`，例如应用版本为 `1.0.1` 时使用 `v1.0.1`。分支推送和 Pull Request 只生成开发构建。
 
 发布新版本前，更新 `src/app/server/version.py` 和 `src/docker-compose.image.yaml` 中的版本并提交，然后创建、推送对应标签。以下以更新为 `1.0.1` 为例：
 
 ```bash
-git tag -a v1.0.1 -m "Clipboard Dispatcher 1.0.1"
+git tag -a v1.0.1 -m "Clipboard Dispatcher 1.0.1：填写版本说明和升级步骤"
 git push origin v1.0.1
 ```
 
@@ -127,7 +131,7 @@ docker compose -f src/docker-compose.yaml restart
 先构建镜像：
 
 ```powershell
-.\scripts\build_docker_image.ps1 -Architecture amd64 -Image clipboard-dispatcher:1.0.0
+.\scripts\build_docker_image.ps1 -Architecture amd64 -Image clipboard-dispatcher:1.0.1
 ```
 
 再启动：
@@ -168,7 +172,7 @@ Caddy 与 Nginx 配置示例见 [HTTPS 反向代理部署](docs/reverse-proxy.zh
 3. 每个设备行提供“查看当前配置”按钮。Windows 显示服务地址、设备 ID、Token 和配置下载，目标 Windows 客户端可在“同步行为”中直接导入 JSON；iOS 显示配置导入、上传剪贴板、截图自动上传、下载剪贴板四个快捷指令二维码，以及设备配置二维码；Android 显示 Tasker 项目与单任务二维码和下载入口。
 4. 设备 Token 以明文持久化，刷新页面后仍可查看和下载当前配置。“重新签发”会生成新 Token，旧 Token 的新请求将被拒绝，设备需重新导入配置。重命名设备也会改变设备 ID，需重新获取并导入接入配置。
 5. 独立设备 Token 无法访问管理接口。Windows 一体化程序仅从本机回环地址使用管理员 Token 访问同步接口。
-6. 禁用设备后，新的上传、下载和 SSE 连接请求会被拒绝，当前配置仍可查看和下载；删除设备后配置与 Tasker 下载入口均返回 404。
+6. 禁用设备后，新的上传、下载和 SSE 连接请求会被拒绝，同时禁止获取接入配置并撤销待用下载票据。重新启用后需重新获取下载链接。删除设备后配置接口返回 404。
 
 ## 图片限制
 
@@ -187,7 +191,9 @@ Caddy 与 Nginx 配置示例见 [HTTPS 反向代理部署](docs/reverse-proxy.zh
 1. 已配置的 `Clipboard Dispatcher.prj.xml`，包含上传与拉取任务。
 2. 已配置的上传、拉取单任务 XML。
 3. 项目与任务已经写入公开服务地址和该设备的独立 Token，无需创建 Tasker 全局变量。
-4. 下载链接绑定设备 ID，可重复使用；每次下载都会写入设备当前 Token，重新签发无需更换链接。
+4. 下载链接使用 256 位随机 ticket，有效期 10 分钟，每个文件仅能成功下载一次；二维码预览不占用下载次数。ticket 绑定设备、文件类型和签发时的 Token，轮换 Token 后旧链接立即失效。过期或已下载时，点击“重新获取下载链接”。链接和二维码包含短时授权，请勿分享。
+
+票据数据库 `provisioning_tickets.sqlite3` 与 `config.json` 位于同一目录，仅保存 ticket 和设备 Token 的 SHA256 摘要。应用访问日志会隐藏 Tasker URL 的查询参数；部署反向代理时也应关闭这些查询参数的日志记录。
 5. 任务与图片同步限制见 [Tasker 使用说明](src/tasker/README.zh-CN.md)。
 
 ## 验证与构建

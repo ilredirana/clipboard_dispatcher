@@ -1,6 +1,6 @@
 services:
   clipboard_dispatcher:
-    image: ${CLIPBOARD_DISPATCHER_IMAGE:-clipboard-dispatcher:1.0.0}
+    image: ${CLIPBOARD_DISPATCHER_IMAGE:-clipboard-dispatcher:1.0.1}
     restart: unless-stopped
     ports:
       - "${CLIPBOARD_DISPATCHER_PORT:-9888}:8000"

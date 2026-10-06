@@ -19,7 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
-from server import routes_clipboard, routes_config, routes_devices, routes_provisioning
+from server import provisioning_tickets, routes_clipboard, routes_config, routes_devices, routes_provisioning
 from server.auth import check_web_auth, consume_local_login_code, set_auth_cookie
 from server.storage import MemoryStorage
 from server.version import APP_VERSION
@@ -96,6 +96,7 @@ def _clear_login_failures(client_address: str) -> None:
 def create_app() -> FastAPI:
     from fastapi.templating import Jinja2Templates
 
+    provisioning_tickets.initialize_store(provisioning_tickets.get_store_path())
     app = FastAPI(
         title="Clipboard Dispatcher",
         version=APP_VERSION,
@@ -120,7 +121,7 @@ def create_app() -> FastAPI:
         """为管理页面和下载接口设置基础浏览器安全响应头。"""
         response = await call_next(request)
         content_type = response.headers.get("content-type", "")
-        if content_type.startswith("text/html"):
+        if content_type.startswith("text/html") or request.url.path.startswith(("/api/devices", "/setup/tasker/")):
             response.headers["Cache-Control"] = "no-store"
         elif request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"

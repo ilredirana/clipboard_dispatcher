@@ -13,7 +13,7 @@ from config_schema import (
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, field_validator
-from server import routes_provisioning
+from server import provisioning_tickets, routes_provisioning
 from server.auth import verify_token
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -90,6 +90,8 @@ def _build_provisioned_response(
     request: Request,
 ) -> DeviceProvisionedResponse:
     """根据设备平台和当前 Token 生成接入资产。"""
+    if not record.enabled:
+        raise HTTPException(status_code=403, detail="设备已禁用，无法获取接入配置")
     base_url = routes_provisioning.get_external_url(request)
     windows_configuration = WindowsClientConfiguration(
         server_url=base_url,
@@ -200,6 +202,7 @@ async def set_device_enabled(
 ) -> DeviceResponse:
     """启用或禁用设备，同步凭据立即生效或失效。"""
     try:
+        provisioning_tickets.revoke_device_tickets(provisioning_tickets.get_store_path(), device_id)
         record = config_manager.update_device_enabled(device_id, data.enabled)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

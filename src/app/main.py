@@ -95,14 +95,17 @@ def _wait_for_server(server: uvicorn.Server, thread: threading.Thread, timeout: 
 
 
 def main() -> None:
+    from server.logging_format import ProvisioningLogFormatter
+
     config_dir = config_manager.get_config_dir()
     os.makedirs(config_dir, exist_ok=True)
     log_path = os.path.join(config_dir, "app.log")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-        handlers=[logging.FileHandler(log_path, encoding="utf-8"), logging.StreamHandler(sys.stdout)],
-    )
+    formatter = ProvisioningLogFormatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    stream_handler = logging.StreamHandler(sys.stdout)
+    file_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter)
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
     config_manager.init()
     is_headless = config_manager.get_runtime_mode() in {"docker_server", "server_only"}
     if is_headless and not config_manager.get("server.enabled"):
