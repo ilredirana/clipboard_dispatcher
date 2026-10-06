@@ -97,6 +97,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - name: Download verified EXE
         uses: actions/download-artifact@v8
         with:
@@ -107,8 +112,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create $env:RELEASE_TAG dist/ClipboardDispatcher.exe dist/ClipboardDispatcher.exe.sha256 --repo $env:GH_REPO --verify-tag --title "Clipboard Dispatcher $env:RELEASE_TAG" --notes-from-tag --latest
+          gh release create $env:RELEASE_TAG dist/ClipboardDispatcher.exe dist/ClipboardDispatcher.exe.sha256 --verify-tag --title "Clipboard Dispatcher $env:RELEASE_TAG" --notes-from-tag --latest
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release 发布失败：$env:RELEASE_TAG" }
